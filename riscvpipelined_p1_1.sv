@@ -81,6 +81,11 @@ module riscv(input  logic        clk, reset,
                MemWriteM, RegWriteM, 
 			   RegWriteW, ResultSrcW);
 
+  hazard_unit hu(ResultSrcEb0, PCSrcE, RdE, Rs1D, Rs2D,
+                 StallF, StallD, FlushE, FlushD);
+  forwarding_unit fu(Rs1E, Rs2E, RdM, RdW, RegWriteM, RegWriteW,
+                     FowardAE, FowardBE);
+
   datapath dp(clk, reset,
               StallF, PCF, InstrF,
 			  opD, funct3D, funct7b5D, StallD, FlushD, ImmSrcD,
@@ -91,6 +96,31 @@ module riscv(input  logic        clk, reset,
 
 endmodule
 
+module hazard_unit(input  logic MemRead, PCSrcE //adc -> Módulo da hazard unit
+                   input  logic [4:0]  RdE, Rs1D, Rs2D, //Registradores de instruções
+                   output logic StallF, StallD, // Fios para dar stall nos dois registradores, foward e decoder
+                   output logic FlushE, FlushD);
+                   //Fio para bolha no encoder e decoder, lógica diferente do mux do diagrama, mas mesmo resultado
+  assign StallF = MemReadE ? ((Rs1D == RdE) || (Rs2D == RdE)) : 0; // Hazard detection
+  assign StallD = StallF;
+
+  //Lógica para o flush
+  assign FlushE = PCSrcE;
+  assign FlushD = FlushE || StallF;
+endmodule
+
+module forwarding_unit(input logic [4:0] Rs1E, Rs2E, RdM, RdW, //adc -> foward_unit
+                       input logic Wb_M, Wb_W,
+                       output logic [1:0] FowardA, FowardB);
+  assign FowardA = (Wb_M && (Rs1E == RdM)) ? 2'b10 :
+                   (Wb_W && (Rs1E == RdW)) ? 2'b01 :
+                                             2'b00;
+
+  assign FowardB = (Wb_M && (Rs2E == RdM)) ? 2'b10 :
+                   (Wb_W && (Rs2E == RdW)) ? 2'b01 :
+                                             2'b00;
+
+endmodule
 
 module controller(input  logic		 clk, reset,
                   // Decode stage control signals
@@ -107,7 +137,7 @@ module controller(input  logic		 clk, reset,
                   output logic       ResultSrcEb0,  // for Hazard Unit
                   // Memory stage control signals
                   output logic 	     MemWriteM,
-                  output logic       RegWriteM,     // for Hazard Unit				  
+                  output logic       RegWriteM,     // for Hazard Unit	-> pro foward			  
                   // Writeback stage control signals
                   output logic 	     RegWriteW,     // for datapath and Hazard Unit
                   output logic [1:0] ResultSrcW);
