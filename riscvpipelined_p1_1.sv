@@ -81,42 +81,52 @@ module riscv(input  logic        clk, reset,
                MemWriteM, RegWriteM, 
 			   RegWriteW, ResultSrcW);
 
-  hazard_unit hu(ResultSrcEb0, PCSrcE, RdE, Rs1D, Rs2D,
-                 StallF, StallD, FlushE, FlushD);
-  forwarding_unit fu(Rs1E, Rs2E, RdM, RdW, RegWriteM, RegWriteW,
-                     FowardAE, FowardBE);
-
   datapath dp(clk, reset,
               StallF, PCF, InstrF,
-			  opD, funct3D, funct7b5D, StallD, FlushD, ImmSrcD,
-			  FlushE, ForwardAE, ForwardBE, PCSrcE, ALUControlE, ALUSrcE, ZeroE,
+			        opD, funct3D, funct7b5D, StallD, FlushD, ImmSrcD,
+			        FlushE, ForwardAE, ForwardBE, PCSrcE, ALUControlE, ALUSrcE, ZeroE,
               MemWriteM, WriteDataM, ALUResultM, ReadDataM,
               RegWriteW, ResultSrcW,
               Rs1D, Rs2D, Rs1E, Rs2E, RdE, RdM, RdW);
 
+hazard_unit hu(Rs1D, Rs2D, RdE, ResultSrcEb0, PCSrcE, 
+               StallF, StallD, FlushD, FlushE);
+
+  forwarding_unit fu(Rs1E, Rs2E, RdM, RdW, RegWriteM, RegWriteW,
+                     ForwardAE, ForwardBE);
+
+
 endmodule
 
-module hazard_unit(input  logic MemRead, PCSrcE //adc -> Módulo da hazard unit
-                   input  logic [4:0]  RdE, Rs1D, Rs2D, //Registradores de instruções
-                   output logic StallF, StallD, // Fios para dar stall nos dois registradores, foward e decoder
-                   output logic FlushE, FlushD);
-                   //Fio para bolha no encoder e decoder, lógica diferente do mux do diagrama, mas mesmo resultado
-  assign StallF = MemReadE ? ((Rs1D == RdE) || (Rs2D == RdE)) : 0; // Hazard detection
-  assign StallD = StallF;
+module hazard_unit(input logic [4:0] Rs1D, Rs2D, // Adc -> Registradores para comparação
+                     input logic [4:0] RdE, 
+                     input logic MemReadE, PCSrcE, // Adc -> Bits de controle
+                     output logic StallF, StallD, // Adc -> Bits para stall
+                     output logic FlushD, FlushE); // Adc -> Limpeza
+                     
+  // Adc -> Se houver leitura da memória, compara os o registrador de destino, se forem iguais temos um hazard
+  assign StallF = MemReadE ? ((Rs1D == RdE) || (Rs2D == RdE)) : 0; 
+  assign StallD = StallF; // Adc -> Se houver stall em F vai haver em D
 
   //Lógica para o flush
-  assign FlushE = PCSrcE;
-  assign FlushD = FlushE || StallF;
+  assign FlushE = PCSrcE; // Limpa se houver branch
+  assign FlushD = FlushE || StallF; // Limpa se houver branch ou com Stall
 endmodule
 
-module forwarding_unit(input logic [4:0] Rs1E, Rs2E, RdM, RdW, //adc -> foward_unit
-                       input logic Wb_M, Wb_W,
-                       output logic [1:0] FowardA, FowardB);
-  assign FowardA = (Wb_M && (Rs1E == RdM)) ? 2'b10 :
+//adc -> foward_unit
+module forwarding_unit(input logic [4:0] Rs1E, Rs2E, RdM, RdW, // Adc -> registradores para comparação
+                       input logic Wb_M, Wb_W, // Adc -> bits de controle para comparação
+                       output logic [1:0] ForwardA, ForwardB); // Adc -> Bits de saída
+
+// Adc -> Se houver escrita no registrador em M e ele for usado em outra operação no rs1 faz o forward em A
+// Adc -> Se houver escrita no registrador em W e ele for usado em outra operação no rs1 faz o forward em A
+  assign ForwardA = (Wb_M && (Rs1E == RdM)) ? 2'b10 :
                    (Wb_W && (Rs1E == RdW)) ? 2'b01 :
                                              2'b00;
 
-  assign FowardB = (Wb_M && (Rs2E == RdM)) ? 2'b10 :
+// Adc -> Se houver escrita no registrador em M e ele for usado em outra operação no rs2 faz o forward em B
+// Adc -> Se houver escrita no registrador em W e ele for usado em outra operação no rs2 faz o forward em B
+  assign ForwardB = (Wb_M && (Rs2E == RdM)) ? 2'b10 :
                    (Wb_W && (Rs2E == RdW)) ? 2'b01 :
                                              2'b00;
 
